@@ -6,7 +6,6 @@ import os
 from fpdf import FPDF
 
 # --- Configuration & Setup ---
-# --- THIS IS THE ONLY CHANGE ---
 # The API_URL now points to your live Render service
 API_URL = "https://credit-scoring-project-api.onrender.com" 
 
