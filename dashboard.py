@@ -6,17 +6,23 @@ import os
 from fpdf import FPDF
 
 # --- Configuration & Setup ---
-API_URL = "http://127.0.0.1:5000" 
+# --- THIS IS THE ONLY CHANGE ---
+# The API_URL now points to your live Render service
+API_URL = "https://credit-scoring-project-api.onrender.com" 
+
+# This file must be in your main project folder
 COLUMNS_PATH = "training_columns.joblib"
 
 # --- Caching & Data Loading ---
 @st.cache_resource(show_spinner="Loading model assets...")
 def load_training_columns(path: str) -> list:
+    """Loads the list of column names the model was trained on."""
     if not os.path.exists(path):
-        st.error(f"Error: The required file '{path}' was not found.")
+        st.error(f"Error: The required file '{path}' was not found. Please run the notebook to create it.")
         st.stop()
     return joblib.load(path)
 
+# Load the columns once at the start
 training_columns = load_training_columns(COLUMNS_PATH)
 
 # --- Helper Functions ---
@@ -41,17 +47,10 @@ def get_rejection_analysis_and_suggestions(inputs: dict) -> tuple[list, list]:
         reasons.append("Short Employment History")
         suggestions.append("Lenders prefer applicants with a stable employment history of at least 1-2 years. Building a longer track record at your current job will help.")
         
-    if inputs['loan_amount'] > inputs['income'] * 5:
-        reasons.append("High Loan Amount Relative to Income")
-        suggestions.append("The requested loan amount is very high compared to your annual income.")
-
     if inputs.get('has_prev_loans'):
         if inputs.get('prev_loan_count', 0) > 3:
             reasons.append("High Number of Existing Loans")
             suggestions.append("Having multiple active loans can indicate high financial leverage. It's advisable to close some existing loans before applying for new ones.")
-        if inputs.get('prev_outstanding_amt', 0) > inputs['income'] * 2:
-            reasons.append("High Existing Debt Burden")
-            suggestions.append("Your existing outstanding loan amount is high compared to your income. Reducing this debt will significantly improve your eligibility.")
 
     if not reasons:
         reasons.append("Overall Profile Risk")
@@ -71,7 +70,10 @@ def get_approval_suggestions() -> list:
 def map_to_full_payload(inputs: dict) -> dict:
     """Creates the full data payload required by the model from a dictionary of user inputs."""
     base = {col: 0 for col in training_columns}
-    base['CIBIL_SCORE'] = (inputs['cibil'] - 300) / 600
+    
+    # The model was trained on 'EXT_SOURCE_2'. We must use that exact name here.
+    base['EXT_SOURCE_2'] = (inputs['cibil'] - 300) / 600
+    
     base["DAYS_BIRTH"] = -inputs['age'] * 365
     base["DAYS_EMPLOYED"] = -inputs['emp'] * 365
     base['AMT_INCOME_TOTAL'] = inputs['income']
@@ -79,9 +81,10 @@ def map_to_full_payload(inputs: dict) -> dict:
     base['AMT_ANNUITY'] = inputs['annuity']
     
     if inputs.get('has_prev_loans'):
-        base['PREV_LOAN_COUNT'] = inputs.get('prev_loan_count', 0)
-        base['PREV_AMT_OUTSTANDING'] = inputs.get('prev_outstanding_amt', 0)
-        base['PREV_REMAINING_EMI'] = inputs.get('prev_remaining_emi', 0)
+        # Note: These feature names are placeholders. Your model needs to have been trained on them.
+        if 'PREV_LOAN_COUNT' in base: base['PREV_LOAN_COUNT'] = inputs.get('prev_loan_count', 0)
+        if 'PREV_AMT_OUTSTANDING' in base: base['PREV_AMT_OUTSTANDING'] = inputs.get('prev_outstanding_amt', 0)
+        if 'PREV_REMAINING_EMI' in base: base['PREV_REMAINING_EMI'] = inputs.get('prev_remaining_emi', 0)
         
     return base
 
@@ -91,12 +94,12 @@ def generate_pdf_report(score: int, prob: float, eligibility: str, reasons: list
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     
-    # --- Report Header ---
-    pdf.set_fill_color(240, 240, 240) # Light grey background
+    # Report Header
+    pdf.set_fill_color(240, 240, 240)
     pdf.cell(0, 12, "Credit Scoring & Eligibility Report", ln=True, align="C", fill=True)
     pdf.ln(10)
     
-    # --- Assessment Result Section ---
+    # Assessment Result Section
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 8, "Assessment Result", ln=True)
     pdf.set_font("Arial", "", 11)
@@ -104,17 +107,17 @@ def generate_pdf_report(score: int, prob: float, eligibility: str, reasons: list
     pdf.multi_cell(0, 6, f"Eligibility Status: {eligibility}")
     pdf.ln(5)
     
-    # --- Analysis & Suggestions Sections ---
+    # Analysis & Suggestions Sections
     if reasons or suggestions:
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Draw a line separator
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(5)
 
     if reasons:
         pdf.set_font("Arial", "B", 12)
-        pdf.set_text_color(220, 50, 50) # Red color for reasons
+        pdf.set_text_color(220, 50, 50) # Red
         pdf.cell(0, 8, "Key Factors for Ineligibility", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.set_text_color(0, 0, 0) # Reset to black
+        pdf.set_text_color(0, 0, 0) # Black
         for i, reason in enumerate(reasons, 1):
             pdf.multi_cell(0, 6, f"{i}. {reason}")
         pdf.ln(5)
@@ -122,22 +125,23 @@ def generate_pdf_report(score: int, prob: float, eligibility: str, reasons: list
     if suggestions:
         suggestion_title = "Suggestions for Improvement" if reasons else "Recommendations to Maintain Your Good Score"
         pdf.set_font("Arial", "B", 12)
-        pdf.set_text_color(0, 100, 0) # Green color for suggestions
+        pdf.set_text_color(0, 100, 0) # Green
         pdf.cell(0, 8, suggestion_title, ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.set_text_color(0, 0, 0) # Reset to black
+        pdf.set_text_color(0, 0, 0) # Black
         for i, suggestion in enumerate(suggestions, 1):
             pdf.multi_cell(0, 6, f"{i}. {suggestion}")
         pdf.ln(5)
         
-    # --- Final Output ---
-    # This is a more robust way to get the byte output for download
+    # Return the direct byte output from the library
     return pdf.output(dest="S").encode("latin-1")
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Credit Scoring Dashboard", layout="wide", page_icon="💳")
 st.title("📊 Advanced Credit Scoring Dashboard")
 st.markdown("Enter applicant details to receive a comprehensive, real-time credit risk assessment.")
+
+st.header("Applicant Details")
 
 # This radio button is outside the form to allow the UI to update instantly
 has_prev_loans_choice = st.radio(
@@ -188,7 +192,7 @@ if predict_button:
         try:
             full_payload = map_to_full_payload(user_inputs)
             predict_url = f"{API_URL}/predict"
-            response = requests.post(predict_url, json=full_payload, timeout=10)
+            response = requests.post(predict_url, json=full_payload, timeout=30)
             response.raise_for_status()
             st.session_state.prediction_result = response.json()
         except requests.RequestException as e:
