@@ -7,7 +7,7 @@ from fpdf import FPDF
 
 # --- Configuration & Setup ---
 # The API_URL now points to your live Render service
-API_URL = "https://credit-scoring-project-api.onrender.com" 
+API_URL = "https://credit-scoring-project-9k9c.onrender.com"
 
 # This file must be in your main project folder
 COLUMNS_PATH = "training_columns.joblib"
